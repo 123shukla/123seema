@@ -1,43 +1,61 @@
-# 123seema
-<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta charset="UTF-8">
-<title>Dash</title>
-<link rel="icon" type="image/x-icon" href="/self-driving/_favicon.ico?v=1.20.0">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/normalize.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/base.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/dashboard.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/report.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/fonts.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/fa-all.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/menu.v1_5_4m1620758006.css">
-<link rel="stylesheet" href="/self-driving/_dash-component-suites/dash_design_kit/datacard.v1_5_4m1620758006.css">
-<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-N6T2RXG');</script>
-</head>
-<body>
+import plotly.express as px
+import plotly.graph_objects as go
+import dash
+import dash_core_components as dcc
+import dash_html_components as html
+from dash.dependencies import Input, Output
+from skimage import data, exposure
+import json
 
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-N6T2RXG"
-        height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+img = data.camera()
+fig = px.imshow(img, binary_string=True)
+fig.update_layout(dragmode="drawrect")
 
-<div id="react-entry-point">
-<div class="_dash-loading">
-Loading...
-</div>
-</div>
-<footer>
-<script id="_dash-config" type="application/json">{"url_base_pathname": null, "requests_pathname_prefix": "/self-driving/", "ui": false, "props_check": false, "show_undo_redo": false, "suppress_callback_exceptions": false, "update_title": "Updating..."}</script>
-<script src="/self-driving/_dash-component-suites/dash_renderer/polyfill@7.v1_9_1m1617900226.8.7.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_renderer/react@16.v1_9_1m1617900226.14.0.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_renderer/react-dom@16.v1_9_1m1617900226.14.0.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_renderer/prop-types@15.v1_9_1m1617900226.7.2.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_core_components/dash_core_components.v1_16_0m1617909890.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_core_components/dash_core_components-shared.v1_16_0m1617909890.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_design_kit/dash_design_kit.v1_5_4m1620758006.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_html_components/dash_html_components.v1_1_3m1617909188.min.js"></script>
-<script src="/self-driving/_dash-component-suites/dash_renderer/dash_renderer.v1_9_1m1617900246.min.js"></script>
-<script id="_dash-renderer" type="application/javascript">var renderer = new DashRenderer();</script>
-</footer>
-</body>
-</html>
+fig_hist = px.histogram(img.ravel())
+
+# Build App
+app = dash.Dash(__name__)
+app.layout = html.Div(
+    [
+        html.H3("Draw a shape, then modify it."),
+        html.Div(
+            [dcc.Graph(id="fig-pic", figure=fig),],
+            style={"width": "60%", "display": "inline-block", "padding": "0 0"},
+        ),
+        html.Div(
+            [dcc.Graph(id="graph-hist", figure=fig_hist),],
+            style={"width": "40%", "display": "inline-block", "padding": "0 0"},
+        ),
+        html.Pre(id="annotations"),
+    ]
+)
+
+@app.callback(
+    Output("graph-hist", "figure"),
+    Output("annotations", "children"),
+    Input("fig-pic", "relayoutData"),
+    prevent_initial_call=True,
+)
+def on_relayout(relayout_data):
+    x0, y0, x1, y1 = (None,) * 4
+    if "shapes" in relayout_data:
+        last_shape = relayout_data["shapes"][-1]
+        x0, y0 = int(last_shape["x0"]), int(last_shape["y0"])
+        x1, y1 = int(last_shape["x1"]), int(last_shape["y1"])
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+    elif any(["shapes" in key for key in relayout_data]):
+        x0 = int([relayout_data[key] for key in relayout_data if "x0" in key][0])
+        x1 = int([relayout_data[key] for key in relayout_data if "x1" in key][0])
+        y0 = int([relayout_data[key] for key in relayout_data if "y0" in key][0])
+        y1 = int([relayout_data[key] for key in relayout_data if "y1" in key][0])
+    if all((x0, y0, x1, y1)):
+        roi_img = img[y0:y1, x0:x1]
+        return (px.histogram(roi_img.ravel()), json.dumps(relayout_data, indent=2))
+    else:
+        return (dash.no_update,) * 2
+
+if __name__ == "__main__":
+    app.run_server(mode="inline", port=8057)
